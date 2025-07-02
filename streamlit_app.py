@@ -350,3 +350,8 @@ if num_funds > 0:
 
 else:
     st.warning("Please enter a number of funds greater than zero to perform calculations.")
+
+# --- Source Code Section ---
+st.subheader("Source Code")
+with open(__file__, "r") as f:
+    st.code(f.read(), language="python")
