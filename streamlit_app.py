@@ -1,357 +1,344 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+import plotly.graph_objects as go
 
-# --- Configuration ---
-st.set_page_config(layout="wide", page_title="Reporting Service Pricing Model")
+# --- PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Fortress Deal Commander",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- Helper Function for HTML Report ---
-def generate_html_report(data_dict, forecast_df):
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <title>Reporting Service Pricing Report</title>
-    <style>
-        body {{ font-family: sans-serif; margin: 20px; }}
-        h1 {{ color: #2C3E50; }}
-        h2 {{ color: #34495E; border-bottom: 2px solid #34495E; padding-bottom: 5px; margin-top: 30px; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-        th {{ background-color: #f2f2f2; color: #333; }}
-        .metric-card {{
-            background-color: #ECF0F1;
-            border-left: 5px solid #2980B9;
-            padding: 15px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        .metric-value {{ font-size: 1.2em; font-weight: bold; color: #2980B9; }}
-        .metric-label {{ font-size: 0.9em; color: #555; }}
-        .highlight-green {{ color: #27AE60; font-weight: bold; }}
-        .highlight-red {{ color: #C0392B; font-weight: bold; }}
-    </style>
-    </head>
-    <body>
-        <h1>Reporting Service Pricing Model Report</h1>
-
-        <h2>Input Parameters</h2>
-        <table>
-            <tr><th>Parameter</th><th>Value</th></tr>
-            <tr><td>Annual Vendor Cost</td><td>${data_dict['vendor_cost_usd']:,}</td></tr>
-            <tr><td>Number of Resources</td><td>{int(data_dict['num_resources'])}</td></tr>
-            <tr><td>Cost Per Resource</td><td>${data_dict['cost_per_resource_usd']:,}</td></tr>
-            <tr><td>Number of Funds</td><td>{int(data_dict['num_funds'])}</td></tr>
-            <tr><td>Desired Margin</td><td>{data_dict['margin_percent']:.2f}%</td></tr>
-            <tr><td>USD to EUR Rate</td><td>{data_dict['usd_to_eur_rate']:.4f}</td></tr>
-            <tr><td>USD to GBP Rate</td><td>{data_dict['usd_to_gbp_rate']:.4f}</td></tr>
-        </table>
-
-        <h2>Cost Breakdown (USD)</h2>
-        <table>
-            <tr><th>Category</th><th>Annual Cost (USD)</th></tr>
-            <tr><td>Total Annual Cost</td><td>${data_dict['total_annual_cost_usd']:,}</td></tr>
-            <tr><td>Cost Per Fund (Annual)</td><td>${data_dict['cost_per_fund_annual_usd']:,}</td></tr>
-            <tr><td>Cost Per Fund (Quarterly)</td><td>${data_dict['cost_per_fund_quarterly_usd']:,}</td></tr>
-            <tr><td>Cost Per Fund (Monthly)</td><td>${data_dict['cost_per_fund_monthly_usd']:,}</td></tr>
-        </table>
-
-        <h2>Pricing Model & Revenue</h2>
-        <table>
-            <tr><th>Metric</th><th>USD</th><th>EUR</th><th>GBP</th></tr>
-            <tr><td>Selling Price Per Fund (Annual)</td><td>${data_dict['selling_price_per_fund_annual_usd']:,}</td><td>€{data_dict['selling_price_per_fund_annual_eur']:,}</td><td>£{data_dict['selling_price_per_fund_annual_gbp']:,}</td></tr>
-            <tr><td>Selling Price Per Fund (Quarterly)</td><td>${data_dict['selling_price_per_fund_quarterly_usd']:,}</td><td>€{data_dict['selling_price_per_fund_quarterly_eur']:,}</td><td>£{data_dict['selling_price_per_fund_quarterly_gbp']:,}</td></tr>
-            <tr><td>Selling Price Per Fund (Monthly)</td><td>${data_dict['selling_price_per_fund_monthly_usd']:,}</td><td>€{data_dict['selling_price_per_fund_monthly_eur']:,}</td><td>£{data_dict['selling_price_per_fund_monthly_gbp']:,}</td></tr>
-            <tr><td>Total Potential Annual Revenue</td><td>${data_dict['total_annual_revenue_usd']:,}</td><td>€{data_dict['total_annual_revenue_eur']:,}</td><td>£{data_dict['total_annual_revenue_gbp']:,}</td></tr>
-        </table>
-
-        <h2>Key Performance Indicators (KPIs)</h2>
-        <div class="metric-card">
-            <div class="metric-label">Gross Profit Margin</div>
-            <div class="metric-value">
-                {data_dict['gross_profit_margin_percent']:.2f}%
-            </div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-label">Return on Investment (ROI)</div>
-            <div class="metric-value">
-                {data_dict['roi_percent']:.2f}%
-            </div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-label">Break-Even Point (Funds)</div>
-            <div class="metric-value">
-                {data_dict['break_even_funds']:.0f} funds
-            </div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-label">Revenue Per Fund</div>
-            <div class="metric-value">
-                ${data_dict['revenue_per_fund_usd']:.2f}
-            </div>
-        </div>
-
-        <h2>5-Year Forecast (USD)</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Year</th>
-                    <th>Cost Reduction (%)</th>
-                    <th>Comment</th>
-                    <th>Adjusted Annual Cost ($)</th>
-                    <th>Forecasted Annual Revenue ($)</th>
-                    <th>Forecasted Profit ($)</th>
-                </tr>
-            </thead>
-            <tbody>
-                """ + "".join([
-                    f"""
-                    <tr>
-                        <td>{int(row['Year'])}</td>
-                        <td>{row['Cost Reduction (%)']:.2f}%</td>
-                        <td>{row['Comment']}</td>
-                        <td>${row['Adjusted Annual Cost ($)']:,}</td>
-                        <td>${row['Forecasted Annual Revenue ($)']:,}</td>
-                        <td>${row['Forecasted Profit ($)']:,}</td>
-                    </tr>
-                    """ for index, row in forecast_df.iterrows()
-                ]) + """
-            </tbody>
-        </table>
-
-    </body>
-    </html>
-    """
-    return html_content
-
-# --- Streamlit App ---
-st.title("💰 Reporting Service Pricing Model")
-st.markdown("Calculate costs, set pricing, and forecast revenue for your reporting service.")
-
-st.sidebar.header("Cost & Unit Inputs")
-vendor_cost_usd = st.sidebar.number_input("Annual Vendor Cost (USD)", min_value=0.0, value=50000.0, step=1000.0)
-num_resources = st.sidebar.number_input("Number of Resources", min_value=0, value=2, step=1)
-cost_per_resource_usd = st.sidebar.number_input("Cost Per Resource (USD)", min_value=0.0, value=75000.0, step=1000.0)
-num_funds = st.sidebar.number_input("Number of Funds", min_value=1, value=100, step=10)
-
-st.sidebar.header("Pricing & FX Inputs")
-margin_percent = st.sidebar.slider("Desired Profit Margin (%)", min_value=0.0, max_value=200.0, value=30.0, step=0.5)
-usd_to_eur_rate = st.sidebar.number_input("USD to EUR Exchange Rate", min_value=0.5, value=0.92, step=0.01)
-usd_to_gbp_rate = st.sidebar.number_input("USD to GBP Exchange Rate", min_value=0.5, value=0.79, step=0.01)
-
-# --- Calculations ---
-total_annual_cost_usd = vendor_cost_usd + (num_resources * cost_per_resource_usd)
-st.subheader("📊 Annual Cost Breakdown (USD)")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Total Annual Cost", f"${total_annual_cost_usd:,.2f}")
-with col2:
-    st.metric("Vendor Cost", f"${vendor_cost_usd:,.2f}")
-with col3:
-    st.metric("Resource Cost", f"${num_resources * cost_per_resource_usd:,.2f}")
-
-if num_funds > 0:
-    cost_per_fund_annual_usd = total_annual_cost_usd / num_funds
-    cost_per_fund_quarterly_usd = cost_per_fund_annual_usd / 4
-    cost_per_fund_monthly_usd = cost_per_fund_annual_usd / 12
-
-    st.subheader("💸 Cost Per Fund (USD)")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Annual", f"${cost_per_fund_annual_usd:,.2f}")
-    with col2:
-        st.metric("Quarterly", f"${cost_per_fund_quarterly_usd:,.2f}")
-    with col3:
-        st.metric("Monthly", f"${cost_per_fund_monthly_usd:,.2f}")
-
-    st.subheader("💲 Pricing Model & Revenue Forecast")
-    selling_price_per_fund_annual_usd = cost_per_fund_annual_usd * (1 + margin_percent / 100)
-    selling_price_per_fund_quarterly_usd = selling_price_per_fund_annual_usd / 4
-    selling_price_per_fund_monthly_usd = selling_price_per_fund_annual_usd / 12
-
-    total_annual_revenue_usd = selling_price_per_fund_annual_usd * num_funds
-
-    st.markdown("### Selling Price Per Fund (USD)")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Annual", f"${selling_price_per_fund_annual_usd:,.2f}")
-    with col2:
-        st.metric("Quarterly", f"${selling_price_per_fund_quarterly_usd:,.2f}")
-    with col3:
-        st.metric("Monthly", f"${selling_price_per_fund_monthly_usd:,.2f}")
-
-    st.markdown("### Total Potential Annual Revenue (USD)")
-    st.metric("Total Revenue", f"${total_annual_revenue_usd:,.2f}")
-
-    st.subheader("🌍 Currency Conversion")
-    st.markdown("Convert prices and revenue to EUR and GBP.")
-
-    col_usd, col_eur, col_gbp = st.columns(3)
-
-    with col_usd:
-        st.metric("Annual Price Per Fund (USD)", f"${selling_price_per_fund_annual_usd:,.2f}")
-        st.metric("Total Annual Revenue (USD)", f"${total_annual_revenue_usd:,.2f}")
-
-    with col_eur:
-        selling_price_per_fund_annual_eur = selling_price_per_fund_annual_usd * usd_to_eur_rate
-        total_annual_revenue_eur = total_annual_revenue_usd * usd_to_eur_rate
-        st.metric("Annual Price Per Fund (EUR)", f"€{selling_price_per_fund_annual_eur:,.2f}")
-        st.metric("Total Annual Revenue (EUR)", f"€{total_annual_revenue_eur:,.2f}")
-
-    with col_gbp:
-        selling_price_per_fund_annual_gbp = selling_price_per_fund_annual_usd * usd_to_gbp_rate
-        total_annual_revenue_gbp = total_annual_revenue_usd * usd_to_gbp_rate
-        st.metric("Annual Price Per Fund (GBP)", f"£{selling_price_per_fund_annual_gbp:,.2f}")
-        st.metric("Total Annual Revenue (GBP)", f"£{total_annual_revenue_gbp:,.2f}")
-
-    st.subheader("📈 Key Performance Indicators (KPIs)")
-    gross_profit_margin_percent = ((total_annual_revenue_usd - total_annual_cost_usd) / total_annual_revenue_usd) * 100 if total_annual_revenue_usd > 0 else 0
-    roi_percent = gross_profit_margin_percent # Simple ROI as (Profit/Cost)*100, can be refined
-    break_even_funds = total_annual_cost_usd / selling_price_per_fund_annual_usd if selling_price_per_fund_annual_usd > 0 else 0
-    revenue_per_fund_usd = total_annual_revenue_usd / num_funds if num_funds > 0 else 0
-
-    col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
-    with col_kpi1:
-        st.metric("Gross Profit Margin", f"{gross_profit_margin_percent:,.2f}%", help="((Total Revenue - Total Cost) / Total Revenue) * 100")
-    with col_kpi2:
-        st.metric("Return on Investment (ROI)", f"{roi_percent:,.2f}%", help="(Profit / Total Cost) * 100")
-    with col_kpi3:
-        st.metric("Break-Even Point (Funds)", f"{break_even_funds:,.0f} funds", help="Number of funds needed to cover total costs")
-    with col_kpi4:
-        st.metric("Revenue Per Fund", f"${revenue_per_fund_usd:,.2f}")
-
-    st.subheader("🗓️ 5-Year Forecast with Cost Reductions")
-    st.write("Model how cost reductions impact your revenue over a 5-year period.")
-
-    forecast_data = []
-    current_annual_cost = total_annual_cost_usd
-    current_annual_revenue = total_annual_revenue_usd
-
-    for year in range(1, 6):
-        st.markdown(f"**Year {year}**")
-        col_red, col_comm = st.columns([0.3, 0.7])
-        cost_reduction_percent = col_red.number_input(f"Cost Reduction Year {year} (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key=f"red_{year}")
-        reduction_comment = col_comm.text_input(f"Comment for Year {year} Reduction", key=f"com_{year}")
-
-        adjusted_cost_this_year = current_annual_cost * (1 - cost_reduction_percent / 100)
-        # Revenue remains based on the initial margin applied to the *current year's* adjusted cost
-        # This assumes the pricing strategy (margin) stays constant relative to the costs
-        forecasted_revenue_this_year = adjusted_cost_this_year * (1 + margin_percent / 100)
-        forecasted_profit_this_year = forecasted_revenue_this_year - adjusted_cost_this_year
-
-        forecast_data.append({
-            "Year": year,
-            "Cost Reduction (%)": cost_reduction_percent,
-            "Comment": reduction_comment,
-            "Adjusted Annual Cost ($)": adjusted_cost_this_year,
-            "Forecasted Annual Revenue ($)": forecasted_revenue_this_year,
-            "Forecasted Profit ($)": forecasted_profit_this_year
-        })
-        current_annual_cost = adjusted_cost_this_year # Update cost for next year's calculation
-
-    forecast_df = pd.DataFrame(forecast_data)
-    st.dataframe(forecast_df.style.format({
-        "Adjusted Annual Cost ($)": "${:,.2f}",
-        "Forecasted Annual Revenue ($)": "${:,.2f}",
-        "Forecasted Profit ($)": "${:,.2f}",
-        "Cost Reduction (%)": "{:.2f}%"
-    }))
-
-    st.subheader("📄 Report Generation")
-    st.write("Download a detailed report of your pricing model.")
-
-    report_data = {
-        'vendor_cost_usd': vendor_cost_usd,
-        'num_resources': num_resources,
-        'cost_per_resource_usd': cost_per_resource_usd,
-        'num_funds': num_funds,
-        'margin_percent': margin_percent,
-        'usd_to_eur_rate': usd_to_eur_rate,
-        'usd_to_gbp_rate': usd_to_gbp_rate,
-        'total_annual_cost_usd': total_annual_cost_usd,
-        'cost_per_fund_annual_usd': cost_per_fund_annual_usd,
-        'cost_per_fund_quarterly_usd': cost_per_fund_quarterly_usd,
-        'cost_per_fund_monthly_usd': cost_per_fund_monthly_usd,
-        'selling_price_per_fund_annual_usd': selling_price_per_fund_annual_usd,
-        'selling_price_per_fund_quarterly_usd': selling_price_per_fund_quarterly_usd,
-        'selling_price_per_fund_monthly_usd': selling_price_per_fund_monthly_usd,
-        'total_annual_revenue_usd': total_annual_revenue_usd,
-        'selling_price_per_fund_annual_eur': selling_price_per_fund_annual_eur,
-        'selling_price_per_fund_annual_gbp': selling_price_per_fund_annual_gbp,
-        'selling_price_per_fund_quarterly_eur': selling_price_per_fund_annual_eur / 4,
-        'selling_price_per_fund_monthly_eur': selling_price_per_fund_annual_eur / 12,
-        'selling_price_per_fund_quarterly_gbp': selling_price_per_fund_annual_gbp / 4,
-        'selling_price_per_fund_monthly_gbp': selling_price_per_fund_annual_gbp / 12,
-        'total_annual_revenue_eur': total_annual_revenue_eur,
-        'total_annual_revenue_gbp': total_annual_revenue_gbp,
-        'gross_profit_margin_percent': gross_profit_margin_percent,
-        'roi_percent': roi_percent,
-        'break_even_funds': break_even_funds,
-        'revenue_per_fund_usd': revenue_per_fund_usd
+# --- THE "FORTRESS" CSS THEME ---
+st.markdown("""
+<style>
+    /* MAIN BACKGROUND */
+    .stApp {
+        background-color: #0E1117;
+        color: #FAFAFA;
+    }
+    
+    /* CARD STYLING */
+    .css-1r6slb0, .css-12oz5g7 {
+        background-color: #262730;
+        border: 1px solid #464B5C;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    /* METRICS BOXES */
+    div[data-testid="stMetric"] {
+        background-color: #1F2937;
+        border: 1px solid #374151;
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #9CA3AF !important;
+        font-size: 14px !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #F3F4F6 !important;
+        font-size: 28px !important;
+        font-weight: 700 !important;
     }
 
-    # Generate HTML report
-    html_report = generate_html_report(report_data, forecast_df)
-    st.download_button(
-        label="Download HTML Report",
-        data=html_report,
-        file_name="pricing_report.html",
-        mime="text/html"
-    )
+    /* HEADERS */
+    h1, h2, h3 {
+        color: #F3F4F6 !important;
+        font-family: 'Helvetica Neue', sans-serif;
+    }
+    h1 { font-weight: 800; letter-spacing: -1px; }
+    
+    /* CUSTOM ALERTS */
+    .success-box {
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #064E3B;
+        border-left: 5px solid #10B981;
+        color: #D1FAE5;
+        margin-bottom: 10px;
+    }
+    .warning-box {
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #78350F;
+        border-left: 5px solid #F59E0B;
+        color: #FEF3C7;
+        margin-bottom: 10px;
+    }
+    .error-box {
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #7F1D1D;
+        border-left: 5px solid #EF4444;
+        color: #FEE2E2;
+        margin-bottom: 10px;
+    }
 
-    # Generate Excel report
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Main Calculations Sheet
-        summary_data = {
-            "Metric": [
-                "Annual Vendor Cost (USD)", "Number of Resources", "Cost Per Resource (USD)",
-                "Number of Funds", "Desired Profit Margin (%)", "USD to EUR Rate", "USD to GBP Rate",
-                "---",
-                "Total Annual Cost (USD)",
-                "Cost Per Fund (Annual USD)", "Cost Per Fund (Quarterly USD)", "Cost Per Fund (Monthly USD)",
-                "---",
-                "Selling Price Per Fund (Annual USD)", "Selling Price Per Fund (Quarterly USD)", "Selling Price Per Fund (Monthly USD)",
-                "Total Potential Annual Revenue (USD)",
-                "---",
-                "Selling Price Per Fund (Annual EUR)", "Total Potential Annual Revenue (EUR)",
-                "Selling Price Per Fund (Annual GBP)", "Total Potential Annual Revenue (GBP)",
-                "---",
-                "Gross Profit Margin (%)", "Return on Investment (ROI) (%)", "Break-Even Point (Funds)", "Revenue Per Fund (USD)"
+    /* BUTTONS */
+    .stButton>button {
+        width: 100%;
+        background-color: #2563EB;
+        color: white;
+        border: none;
+        padding: 10px;
+        font-weight: bold;
+        border-radius: 5px;
+    }
+    .stButton>button:hover {
+        background-color: #1D4ED8;
+    }
+    
+    /* SIDEBAR */
+    section[data-testid="stSidebar"] {
+        background-color: #111827;
+        border-right: 1px solid #374151;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- SIDEBAR: NAVIGATION & GLOBAL ASSUMPTIONS ---
+with st.sidebar:
+    st.title("🛡️ FORTRESS COMMANDER")
+    st.caption("Deal Desk Analytics v2.0")
+    st.markdown("---")
+    navigation = st.radio("TOOLKIT", ["Deal Scorer", "Decision Trees", "Negotiation Playbook"])
+    
+    st.markdown("---")
+    st.markdown("### ⚙️ SYSTEM PARAMS")
+    
+    # Cost Drivers
+    with st.expander("Back-Office Costs", expanded=False):
+        base_cost = st.number_input("Base Cost/Fund ($)", value=25000, step=1000)
+        overhead_load = st.slider("Overhead Load (%)", 0, 50, 20) / 100
+    
+    # Revenue Yields
+    with st.expander("Yield Assumptions", expanded=False):
+        fx_spread_bps = st.number_input("Avg FX Spread (bps)", value=8.0, step=0.5)
+        cash_spread_bps = st.number_input("Cash NII Spread (bps)", value=150.0, step=10.0)
+    
+    # Margin Hurdle
+    hurdle_rate = st.slider("TARGET MARGIN (%)", 20, 60, 40)
+
+# --- FUNCTION: GAUGE CHART ---
+def create_gauge(value, title, threshold):
+    # Dynamic Color Logic
+    if value >= threshold:
+        bar_color = "#10B981" # Green
+    elif value < 0:
+        bar_color = "#EF4444" # Red
+    else:
+        bar_color = "#F59E0B" # Yellow/Amber
+
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = value,
+        title = {'text': title, 'font': {'size': 20, 'color': '#9CA3AF'}},
+        number = {'font': {'size': 40, 'color': bar_color}, 'suffix': "%"},
+        gauge = {
+            'axis': {'range': [-20, 100], 'tickwidth': 1, 'tickcolor': "#4B5563"},
+            'bar': {'color': bar_color},
+            'bgcolor': "#1F2937",
+            'borderwidth': 2,
+            'bordercolor': "#374151",
+            'steps': [
+                {'range': [-20, 0], 'color': '#374151'},
+                {'range': [0, threshold], 'color': '#374151'}
             ],
-            "Value": [
-                vendor_cost_usd, num_resources, cost_per_resource_usd,
-                num_funds, margin_percent, usd_to_eur_rate, usd_to_gbp_rate,
-                "---",
-                total_annual_cost_usd,
-                cost_per_fund_annual_usd, cost_per_fund_quarterly_usd, cost_per_fund_monthly_usd,
-                "---",
-                selling_price_per_fund_annual_usd, selling_price_per_fund_quarterly_usd, selling_price_per_fund_monthly_usd,
-                total_annual_revenue_usd,
-                "---",
-                selling_price_per_fund_annual_eur, total_annual_revenue_eur,
-                selling_price_per_fund_annual_gbp, total_annual_revenue_gbp,
-                "---",
-                gross_profit_margin_percent, roi_percent, break_even_funds, revenue_per_fund_usd
-            ]
+            'threshold': {
+                'line': {'color': "#F59E0B", 'width': 4},
+                'thickness': 0.75,
+                'value': threshold
+            }
         }
-        summary_df = pd.DataFrame(summary_data)
-        summary_df.to_excel(writer, sheet_name='Summary', index=False)
-
-        # 5-Year Forecast Sheet
-        forecast_df.to_excel(writer, sheet_name='5-Year Forecast', index=False)
-
-    st.download_button(
-        label="Download Excel Report",
-        data=output.getvalue(),
-        file_name="pricing_report.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ))
+    fig.update_layout(
+        paper_bgcolor = "#0E1117", 
+        font = {'color': "#F3F4F6", 'family': "Arial"},
+        height=280, 
+        margin=dict(l=20, r=20, t=50, b=20)
     )
+    return fig
 
-else:
-    st.warning("Please enter a number of funds greater than zero to perform calculations.")
+# --- TAB 1: DEAL SCORER (CALCULATOR) ---
+if navigation == "Deal Scorer":
+    st.markdown("## 📊 Deal Profitability Scorer")
+    
+    # --- INPUT SECTION (CARD STYLE) ---
+    with st.container():
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("### 1. Asset Profile")
+            aum = st.number_input("Launch AUM ($M)", value=50.0, step=10.0) * 1_000_000
+            complexity = st.selectbox("Fund Complexity", ["Low (Vanilla)", "Medium (Hedge)", "High (Private Credit)"])
+            comp_map = {"Low (Vanilla)": 1.0, "Medium (Hedge)": 1.5, "High (Private Credit)": 2.5}
+            comp_factor = comp_map[complexity]
 
-# --- Source Code Section ---
-st.subheader("Source Code")
-with open(__file__, "r") as f:
-    st.code(f.read(), language="python")
+        with col2:
+            st.markdown("### 2. Fee Proposal")
+            admin_bps = st.number_input("Admin Fee (bps)", value=8.0, step=0.1)
+            mmf = st.number_input("Min. Monthly Fee ($)", value=5000, step=500)
+            
+        with col3:
+            st.markdown("### 3. The Bundle")
+            est_fx_vol = st.number_input("Est. Annual FX Vol ($M)", value=10.0, step=5.0) * 1_000_000
+            est_cash = st.number_input("Avg. Cash Balances ($M)", value=2.0, step=0.5) * 1_000_000
+
+    st.markdown("---")
+
+    # --- CALCULATIONS ---
+    admin_rev_bps = aum * (admin_bps / 10000)
+    admin_rev_mmf = mmf * 12
+    admin_revenue = max(admin_rev_bps, admin_rev_mmf)
+    
+    fx_revenue = est_fx_vol * (fx_spread_bps / 10000)
+    cash_revenue = est_cash * (cash_spread_bps / 10000)
+    total_revenue = admin_revenue + fx_revenue + cash_revenue
+    
+    total_cost = (base_cost * comp_factor) * (1 + overhead_load)
+    profit = total_revenue - total_cost
+    margin_percent = (profit / total_revenue) * 100 if total_revenue > 0 else 0
+
+    # --- SCOREBOARD DASHBOARD ---
+    c1, c2, c3 = st.columns([1, 1, 1.5])
+    
+    with c1:
+        st.metric("Total Relationship Value (TRV)", f"${total_revenue:,.0f}", delta=f"{admin_bps} bps")
+        st.caption(f"Admin: ${admin_revenue:,.0f} | FX/Cash: ${(fx_revenue + cash_revenue):,.0f}")
+        
+    with c2:
+        st.metric("Cost to Serve (CTS)", f"${total_cost:,.0f}", delta=f"{comp_factor}x Complexity", delta_color="inverse")
+        st.caption(f"Base: ${base_cost:,.0f} | Load: {overhead_load*100}%")
+        
+    with c3:
+        st.plotly_chart(create_gauge(margin_percent, "Net Margin %", hurdle_rate), use_container_width=True)
+
+    # --- THE VERDICT (Dynamic Alerts) ---
+    st.subheader("📝 The Verdict")
+    
+    if margin_percent >= hurdle_rate:
+        st.markdown(f"""
+        <div class="success-box">
+            <strong>✅ APPROVED:</strong> This deal exceeds the <strong>{hurdle_rate}%</strong> hurdle. Proceed to contract.
+        </div>
+        """, unsafe_allow_html=True)
+    elif margin_percent < 0:
+        st.markdown(f"""
+        <div class="error-box">
+            <strong>🛑 REJECT:</strong> This deal is a <strong>LOSS MAKER</strong> ($-{abs(profit):,.0f}/yr). Do not sign.
+        </div>
+        """, unsafe_allow_html=True)
+        st.write(f"**Required Action:** You need to find **${abs(profit):,.0f}** in additional revenue just to break even.")
+    else:
+        st.markdown("""
+        <div class="warning-box">
+            <strong>⚠️ REFERRAL REQUIRED:</strong> Deal is profitable but below target hurdle. Apply 'Give-Gets' below.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # --- THE SOLVER ---
+        with st.expander("🔧 Margin Fixer (Solve for X)", expanded=True):
+            target_profit = total_revenue * (hurdle_rate / 100)
+            gap = (total_cost / (1 - (hurdle_rate/100))) - total_revenue
+            
+            if gap > 0:
+                st.write(f"To reach **{hurdle_rate}% Margin**, you need **${gap:,.0f}** in additional revenue.")
+                req_fx = gap / (fx_spread_bps / 10000)
+                req_admin_bps = (gap / aum) * 10000
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.info(f"**Option A (FX Flow):**\nGet client to commit to **${req_fx/1_000_000:,.1f}M** more in FX Flow.")
+                with col_b:
+                    st.info(f"**Option B (Fee Bump):**\nRaise Admin Fee by **{req_admin_bps:.2f} bps** (New total: {admin_bps + req_admin_bps:.2f} bps).")
+
+# --- TAB 2: DECISION TREES ---
+elif navigation == "Decision Trees":
+    st.markdown("## 🌳 Negotiation Decision Trees")
+    
+    tab1, tab2 = st.tabs(["The 'Rate Card' Challenge", "The 'Small Launch' Trap"])
+    
+    with tab1:
+        st.markdown("#### Scenario: Competitor is Cheaper")
+        st.info("Sales: 'Competitor X is 2bps cheaper. We need to match.'")
+        
+        q1 = st.radio("Is the deal margin (at proposed price) above 40%?", ["Select...", "Yes", "No"], index=0)
+        
+        if q1 == "Yes":
+            st.markdown("⬇️")
+            q2 = st.radio("Is this a 'Vanilla' Fund or 'Exotic'?", ["Select...", "Vanilla (Long Only)", "Exotic (Derivatives/Private)"], index=0)
+            
+            if q2 == "Vanilla (Long Only)":
+                st.success("✅ **MATCH FEE** but mandate **Full STP** (No manual uploads).")
+            elif q2 == "Exotic (Derivatives/Private)":
+                st.markdown("⬇️")
+                q3 = st.radio("Can we capture the Wallet Share (Custody + FX)?", ["Select...", "Yes", "No"], index=0)
+                if q3 == "Yes":
+                    st.success("✅ **MATCH FEE** on Admin, but lock in FX exclusivity.")
+                elif q3 == "No":
+                    st.error("🛑 **DO NOT MATCH.** Sell our Valuation Team expertise.")
+        
+        elif q1 == "No":
+            st.error("🛑 **STOP.** Do not lower price. Pivot to a 'Ramp-Up' model.")
+
+    with tab2:
+        st.markdown("#### Scenario: The Small Launch ($20M AUM)")
+        st.info("Sales: 'They will be $500M in two years! Give them a break now.'")
+        
+        sq1 = st.radio("Does the Minimum Monthly Fee (MMF) cover fixed costs?", ["Select...", "Yes", "No"], index=0, key="sq1")
+        
+        if sq1 == "No":
+            st.error("🛑 **STOP.** Raise the MMF. We cannot subsidize their startup costs.")
+        elif sq1 == "Yes":
+            st.markdown("⬇️")
+            sq2 = st.radio("Does the deal structure include tiered breakpoints?", ["Select...", "Yes", "No"], index=0, key="sq2")
+            
+            if sq2 == "No":
+                st.warning("⚠️ **Counter-Propose:** Offer 10bps on first $50M, 6bps on next $50M.")
+            elif sq2 == "Yes":
+                st.success("✅ **PROCEED.** Ensure Implementation Fees are paid upfront.")
+
+# --- TAB 3: NEGOTIATION PLAYBOOK ---
+elif navigation == "Negotiation Playbook":
+    st.markdown("## 🛡️ The 'Give-Get' Playbook")
+    st.caption("Never concede on price without extracting value elsewhere.")
+    
+    col_x, col_y = st.columns(2)
+    
+    with col_x:
+        with st.expander("1. IF they want Lower Admin Bps...", expanded=True):
+            st.markdown("""
+            **You ask for:** Longer Contract Term (3-5 Years).
+            > *"I can get to that number, but that is a 'Partner Price,' not a 'Vendor Price.' I need a 3-year term to amortize the setup costs."*
+            """)
+        
+        with st.expander("2. IF they want Waived Setup Fees..."):
+            st.markdown("""
+            **You ask for:** Higher Minimum Monthly Fee (MMF).
+            > *"I can waive the setup fee to help your Day 1 cash flow, but I need to keep the MMF steady to cover the ongoing compliance costs."*
+            """)
+
+    with col_y:
+        with st.expander("3. IF they want Lower Custody Fees..."):
+            st.markdown("""
+            **You ask for:** Exclusivity on FX & Cash.
+            > *"The real cost to you isn't the custody bp, it's the operational drag of unbundled FX. If you give us the FX flow, I can suppress the custody fee."*
+            """)
+
+        with st.expander("4. IF they want Custom Reporting..."):
+            st.markdown("""
+            **You ask for:** Standard/Hard-coded Pricing for 'Extra' Reports.
+            > *"Happy to build that, but bespoke work falls outside the standard SLA. We bill customization at a per-hour rate."*
+            """)
+
+    st.markdown("### 🚫 The Red Lines (Non-Negotiables)")
+    st.error("""
+    1.  **Liability Caps:** Never unlimited. Cap at 12-24 months fees.
+    2.  **CPI / COLA:** Contracts must have inflation adjustment clauses.
+    3.  **Pass-Throughs:** Tech, Legal, and SWIFT costs are billable to client.
+    """)
